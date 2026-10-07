@@ -72,4 +72,30 @@ def build_features(wide: pd.DataFrame, terrain: dict[str, np.ndarray],
     return X, base
 
 
-__all__ = ["build_features", "TARGET_VAR", "VARIABLES", "LAPSE_RATE"]
+RAIN_THRESHOLD_MM = 0.2  # lluvia apreciable en 3 h (la resolución de los pluviómetros es 0,1 mm)
+
+
+def build_rain_features(wide: pd.DataFrame, terrain: dict[str, np.ndarray],
+                        models: tuple[str, ...]) -> tuple[pd.DataFrame, np.ndarray]:
+    """Predictores de lluvia en 3 h. Devuelve (X, prob_bruta).
+
+    `prob_bruta` es la fracción de modelos que dan lluvia apreciable: la probabilidad que se
+    obtendría sin corrección, usada como referencia en la verificación.
+    """
+    X, _ = build_features(wide, terrain, models)
+    tp = np.column_stack([
+        wide[f"tp3__{m}"].to_numpy(dtype="float32") if f"tp3__{m}" in wide else np.full(len(wide), np.nan, "float32")
+        for m in models])
+    for k, m in enumerate(models):
+        X[f"tp3__{m}"] = tp[:, k]
+    avail = np.isfinite(tp).sum(axis=1)
+    wet = (np.nan_to_num(tp, nan=0.0) >= RAIN_THRESHOLD_MM).sum(axis=1)
+    X["tp3__mean"] = _nanmean(tp)
+    with np.errstate(all="ignore"):
+        X["tp3__max"] = np.where(avail > 0, np.nanmax(np.where(np.isfinite(tp), tp, -1), axis=1), np.nan)
+    frac = np.where(avail > 0, wet / np.maximum(avail, 1), np.nan)
+    X["wet_frac"] = frac
+    return X, frac
+
+
+__all__ = ["build_features", "build_rain_features", "TARGET_VAR", "VARIABLES", "LAPSE_RATE", "RAIN_THRESHOLD_MM"]

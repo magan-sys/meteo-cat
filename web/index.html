@@ -18,6 +18,7 @@
   --grid: #ecebe7;
   --series-1: #2a78d6;
   --series-2: #eb6834;
+  --rain: #256abf;
   --accent: #2a78d6;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,21 +26,20 @@
     color-scheme: dark;
     --surface: #1a1a19; --panel: #232322; --border: #383835;
     --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-    --grid: #2e2e2c; --series-1: #3987e5; --series-2: #d95926; --accent: #3987e5;
+    --grid: #2e2e2c; --series-1: #3987e5; --series-2: #d95926; --rain: #5598e7; --accent: #3987e5;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --surface: #1a1a19; --panel: #232322; --border: #383835;
   --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-  --grid: #2e2e2c; --series-1: #3987e5; --series-2: #d95926; --accent: #3987e5;
+  --grid: #2e2e2c; --series-1: #3987e5; --series-2: #d95926; --rain: #5598e7; --accent: #3987e5;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--surface); color: var(--text-primary);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
-  display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh;
 }
 header { padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
 header h1 { font-size: 18px; margin: 0; }
@@ -47,18 +47,18 @@ header .sub { color: var(--text-secondary); font-size: 13px; }
 .controls { padding: 0 16px 8px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .controls button {
   font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--panel); color: var(--text-primary); cursor: pointer; min-width: 44px;
+  background: var(--panel); color: var(--text-primary); cursor: pointer; min-width: 44px; min-height: 36px;
 }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: var(--panel); color: var(--text-secondary); }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .controls input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .controls .time { font-variant-numeric: tabular-nums; min-width: 150px; font-weight: 600; }
-#map { min-height: 300px; }
+#map { height: min(68vh, 760px); min-height: 300px; }
 .legend { padding: 8px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--text-secondary); font-size: 12px; }
 .legend .bar { height: 10px; flex: 1; max-width: 360px; border-radius: 2px; }
 .ticks { display: flex; justify-content: space-between; max-width: 360px; flex: 1; font-variant-numeric: tabular-nums; }
-@media (max-width: 719px) {
-  body { display: block; height: auto; }
-  #map { height: 62vh; }
-}
 .legend .hint { flex-basis: 100%; }
 @media (min-width: 720px) { .legend .hint { flex-basis: auto; } }
 #detail {
@@ -66,23 +66,27 @@ header .sub { color: var(--text-secondary); font-size: 13px; }
 }
 #detail.open { display: block; }
 #detail h2 { font-size: 14px; margin: 0 0 4px; }
+#detail h3 { font-size: 13px; margin: 12px 0 4px; color: var(--text-secondary); font-weight: 600; }
 #detail .meta { color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; }
-.chart-legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .chart-legend span::before { content: ""; display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; background: var(--c); }
-#chart { width: 100%; height: 180px; display: block; }
+svg.chart { width: 100%; display: block; }
 .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: none; }
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: none; z-index: 2; }
 .chart-wrap { position: relative; }
-.msg { padding: 16px; color: var(--text-secondary); }
-.close { float: right; background: none; border: 0; color: var(--text-secondary); font-size: 18px; cursor: pointer; }
+.close { float: right; background: none; border: 0; color: var(--text-secondary); font-size: 18px; cursor: pointer; min-width: 44px; min-height: 36px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Temperatura prevista en Catalunya</h1>
+  <h1 id="title">Temperatura prevista en Catalunya</h1>
   <span class="sub" id="issued">Cargando…</span>
 </header>
 <div class="controls">
+  <div class="seg" role="group" aria-label="Variable">
+    <button id="btn-t2m" aria-pressed="true">Temperatura</button>
+    <button id="btn-rain" aria-pressed="false">Lluvia</button>
+  </div>
   <button id="play" aria-label="Reproducir">▶</button>
   <input type="range" id="slider" min="0" max="0" value="0" aria-label="Hora de previsión">
   <span class="time" id="time">–</span>
@@ -90,28 +94,33 @@ header .sub { color: var(--text-secondary); font-size: 13px; }
 <div id="map"></div>
 <div>
   <div class="legend">
-    <span>°C</span>
+    <span id="legend-unit">°C</span>
     <div style="flex:1; min-width:200px; max-width:360px">
       <div class="bar" id="legend-bar"></div>
       <div class="ticks" id="legend-ticks"></div>
     </div>
-    <span class="hint">Haz clic en el mapa para ver la evolución en un punto</span>
+    <span class="hint" id="legend-hint">Toca el mapa para ver la evolución en un punto</span>
   </div>
   <div id="detail">
     <button class="close" id="close" aria-label="Cerrar">×</button>
     <h2 id="detail-title">Punto</h2>
     <div class="meta" id="detail-meta"></div>
+    <h3>Temperatura</h3>
     <div class="chart-legend">
       <span style="--c: var(--series-1)">Previsión corregida</span>
       <span style="--c: var(--series-2)">Media de modelos sin corregir</span>
     </div>
-    <div class="chart-wrap"><svg id="chart" role="img" aria-label="Evolución de la temperatura"></svg><div class="tip" id="tip"></div></div>
+    <div class="chart-wrap"><svg id="chart" class="chart" height="170" role="img" aria-label="Evolución de la temperatura"></svg><div class="tip" id="tip"></div></div>
+    <h3>Probabilidad de lluvia (≥ 0,2 mm en 3 h)</h3>
+    <div class="chart-wrap"><svg id="rain-chart" class="chart" height="110" role="img" aria-label="Probabilidad de lluvia por hora"></svg><div class="tip" id="rain-tip"></div></div>
   </div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
 const fmtTime = new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
+const fmtDay = new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", timeZone: "Europe/Madrid" });
 const isDark = () => getComputedStyle(document.documentElement).colorScheme === "dark";
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 const map = L.map("map", { zoomControl: true }).fitBounds([[40.52, 0.16], [42.86, 3.33]]);
 const tiles = (dark) => L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
@@ -120,7 +129,9 @@ const tiles = (dark) => L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 
 let base = tiles(isDark()).addTo(map);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { map.removeLayer(base); base = tiles(isDark()).addTo(map); });
 
-let meta = null, overlay = null, idx = 0, timer = null, marker = null, series = null;
+let meta = null, overlay = null, idx = 0, timer = null, marker = null, series = null, layer = "t2m";
+
+function images() { return layer === "rain" ? meta.rain_images : meta.images; }
 
 function setHour(i) {
   idx = i;
@@ -128,15 +139,34 @@ function setHour(i) {
   $("time").textContent = fmtTime.format(new Date(meta.times[i]));
   const b = meta.bounds; // [lon_min, lat_min, lon_max, lat_max]
   const bounds = [[b[1], b[0]], [b[3], b[2]]];
-  if (!overlay) overlay = L.imageOverlay(meta.images[i], bounds, { opacity: 0.8 }).addTo(map);
-  else overlay.setUrl(meta.images[i]);
-  if (series) drawChart();
+  const opacity = layer === "rain" ? 0.85 : 0.8;
+  if (!overlay) overlay = L.imageOverlay(images()[i], bounds, { opacity }).addTo(map);
+  else { overlay.setUrl(images()[i]); overlay.setOpacity(opacity); }
+  if (series) drawCharts();
 }
 
-function legend(stops) {
-  const min = stops[0][0], max = stops[stops.length - 1][0];
-  $("legend-bar").style.background = `linear-gradient(to right, ${stops.map(([t, c]) => `${c} ${(100 * (t - min) / (max - min)).toFixed(1)}%`).join(",")})`;
-  $("legend-ticks").innerHTML = [min, 0, 15, 30, max].map((t) => `<span>${t}</span>`).join("");
+function legend() {
+  const rain = layer === "rain";
+  const stops = rain ? meta.rain_palette : meta.palette;
+  const min = rain ? 0 : stops[0][0], max = stops[stops.length - 1][0];
+  const grad = stops.map(([t, c]) => `${c} ${(100 * (t - min) / (max - min)).toFixed(1)}%`);
+  if (rain) grad.unshift(`transparent 0%`, `transparent ${(100 * stops[0][0] / max).toFixed(1)}%`);
+  $("legend-bar").style.background = `linear-gradient(to right, ${grad.join(",")})`;
+  $("legend-bar").style.outline = rain ? `1px solid ${css("--border")}` : "none";
+  $("legend-ticks").innerHTML = (rain ? [0, 25, 50, 75, 100] : [min, 0, 15, 30, max]).map((t) => `<span>${t}</span>`).join("");
+  $("legend-unit").textContent = rain ? "%" : "°C";
+  $("title").textContent = rain ? "Probabilidad de lluvia en Catalunya" : "Temperatura prevista en Catalunya";
+  $("legend-hint").textContent = rain
+    ? "Probabilidad de ≥ 0,2 mm en las 3 h anteriores. Toca el mapa para ver un punto"
+    : "Toca el mapa para ver la evolución en un punto";
+}
+
+function setLayer(l) {
+  layer = l;
+  $("btn-t2m").setAttribute("aria-pressed", l === "t2m");
+  $("btn-rain").setAttribute("aria-pressed", l === "rain");
+  legend();
+  setHour(idx);
 }
 
 async function init() {
@@ -147,13 +177,15 @@ async function init() {
   const parts = [`Emitida ${fmtTime.format(new Date(meta.issued))}`,
     `modelos: ${Object.keys(meta.runs).map((m) => names[m] || m).join(", ")}`,
     meta.ml_correction ? "corrección ML activa" : "sin modelo ML (solo media + altitud)"];
-  if (meta.nowcast) parts.push(`nowcasting con ${meta.nowcast.stations} estaciones`);
+  if (meta.nowcast && meta.nowcast.stations) parts.push(`nowcasting con ${meta.nowcast.stations} estaciones`);
   $("issued").textContent = parts.join(" · ");
   $("slider").max = meta.times.length - 1;
-  legend(meta.palette);
+  legend();
   setHour(0);
 }
 
+$("btn-t2m").addEventListener("click", () => setLayer("t2m"));
+$("btn-rain").addEventListener("click", () => setLayer("rain"));
 $("slider").addEventListener("input", (e) => setHour(+e.target.value));
 $("play").addEventListener("click", () => {
   if (timer) { clearInterval(timer); timer = null; $("play").textContent = "▶"; return; }
@@ -174,12 +206,18 @@ async function pointSeries(lat, lon) {
   }
   const a = tileCache.get(key);
   if (!a) return null;
-  const ii = i % g.tile, jj = j % g.tile, at = (k, t) => a[((k * T + t) * g.tile + ii) * g.tile + jj];
-  const val = (v) => (v === g.missing ? null : v / 10);
-  const corr = [], raw = [];
-  for (let t = 0; t < T; t++) { corr.push(val(at(0, t))); raw.push(val(at(1, t))); }
-  if (corr.every((v) => v === null)) return null;
-  return { lat: g.lat0 - i * g.step, lon: g.lon0 + j * g.step, times: meta.times, corregido: corr, media_modelos: raw };
+  const ii = i % g.tile, jj = j % g.tile;
+  const get = (name) => {
+    const k = g.layers.indexOf(name), out = [];
+    for (let t = 0; t < T; t++) {
+      const v = a[((k * T + t) * g.tile + ii) * g.tile + jj];
+      out.push(v === g.missing ? null : v / 10);
+    }
+    return out;
+  };
+  const s = { lat: g.lat0 - i * g.step, lon: g.lon0 + j * g.step, times: meta.times,
+    corregido: get("t2m"), media_modelos: get("t2m_raw"), lluvia: get("rain_prob"), mm: get("rain_mm") };
+  return s.corregido.every((v) => v === null) ? null : s;
 }
 
 map.on("click", async (e) => {
@@ -192,49 +230,95 @@ map.on("click", async (e) => {
   $("detail-title").textContent = `${series.lat.toFixed(2)}° N, ${series.lon.toFixed(2)}° E`;
   $("detail").classList.add("open");
   map.invalidateSize();
-  drawChart();
-  if (innerWidth < 720) $("detail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  drawCharts();
+  $("detail").scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
-function drawChart() {
-  const svg = $("chart"), W = svg.clientWidth, H = 180, m = { l: 36, r: 12, t: 8, b: 22 };
-  const css = getComputedStyle(document.documentElement);
-  const c1 = css.getPropertyValue("--series-1"), c2 = css.getPropertyValue("--series-2");
-  const grid = css.getPropertyValue("--grid"), muted = css.getPropertyValue("--text-muted");
+const M = { l: 36, r: 12, t: 8, b: 22 };
+function xScale(W, n) { return (i) => M.l + (W - M.l - M.r) * i / Math.max(1, n - 1); }
+function dayTicks(x, H, W) {
+  let s = "";
+  series.times.forEach((t, i) => {
+    const d = new Date(t);
+    const hour = +new Intl.DateTimeFormat("es-ES", { hour: "numeric", hourCycle: "h23", timeZone: "Europe/Madrid" }).format(d);
+    if (hour === 0 && x(i) + 44 < W) s += `<line x1="${x(i)}" x2="${x(i)}" y1="${M.t}" y2="${H - M.b}" stroke="${css("--grid")}"/>
+      <text x="${x(i) + 4}" y="${H - 6}" font-size="11" fill="${css("--text-muted")}">${fmtDay.format(d)}</text>`;
+  });
+  return s;
+}
+function hoverIndex(svg, ev, W, n) {
+  const rect = svg.getBoundingClientRect();
+  return Math.round((ev.clientX - rect.left - M.l) / (W - M.l - M.r) * (n - 1));
+}
+function tipHtml(i) {
+  const f = (v, u, d = 1) => v === null ? "–" : `${v.toFixed(d)} ${u}`;
+  return `<b>${fmtTime.format(new Date(series.times[i]))}</b><br>Corregida: ${f(series.corregido[i], "°C")}`
+    + `<br>Media modelos: ${f(series.media_modelos[i], "°C")}<br>Lluvia: ${f(series.lluvia[i], "%", 0)}`
+    + ` · ${f(series.mm[i], "mm")}`;
+}
+function attachHover(svg, tip, W, n, x) {
+  svg.onmousemove = (ev) => {
+    const i = hoverIndex(svg, ev, W, n);
+    if (i < 0 || i >= n) return;
+    const cross = svg.querySelector(".cross");
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = tipHtml(i);
+    tip.style.display = "block";
+    tip.style.left = `${Math.min(x(i) + 12, W - 190)}px`;
+    tip.style.top = "8px";
+  };
+  svg.onmouseleave = () => { tip.style.display = "none"; svg.querySelector(".cross").setAttribute("visibility", "hidden"); };
+}
+
+function drawCharts() { drawTemp(); drawRain(); updateMeta(); }
+
+function updateMeta() {
+  const t = series.corregido[idx], p = series.lluvia[idx];
+  const parts = [];
+  if (t !== null) parts.push(`${t.toFixed(1)} °C`);
+  if (p !== null) parts.push(`${p.toFixed(0)} % de probabilidad de lluvia`);
+  $("detail-meta").textContent = `${fmtTime.format(new Date(series.times[idx]))}: ${parts.join(" · ")}`;
+}
+
+function drawTemp() {
+  const svg = $("chart"), W = svg.clientWidth, H = 170;
   const n = series.times.length, vals = [...series.corregido, ...series.media_modelos].filter((v) => v !== null);
   const lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
-  const x = (i) => m.l + (W - m.l - m.r) * i / Math.max(1, n - 1);
-  const y = (v) => m.t + (H - m.t - m.b) * (hi - v) / (hi - lo);
+  const x = xScale(W, n), y = (v) => M.t + (H - M.t - M.b) * (hi - v) / (hi - lo);
   const path = (arr) => arr.map((v, i) => v === null ? "" : `${i && arr[i - 1] !== null ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
   const step = Math.max(1, Math.ceil((hi - lo) / 4));
   let s = "";
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step)
-    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${grid}"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${muted}">${v}°</text>`;
-  series.times.forEach((t, i) => {
-    const d = new Date(t);
-    if (d.getUTCHours() === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="11" fill="${muted}">${d.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</text>`;
-  });
-  s += `<line x1="${x(idx)}" x2="${x(idx)}" y1="${m.t}" y2="${H - m.b}" stroke="${muted}" stroke-dasharray="3 3"/>`;
-  s += `<path d="${path(series.media_modelos)}" fill="none" stroke="${c2}" stroke-width="2"/>`;
-  s += `<path d="${path(series.corregido)}" fill="none" stroke="${c1}" stroke-width="2"/>`;
-  s += `<line id="cross" y1="${m.t}" y2="${H - m.b}" stroke="${muted}" visibility="hidden"/>`;
+    s += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--grid")}"/><text x="${M.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css("--text-muted")}">${v}°</text>`;
+  s += dayTicks(x, H, W);
+  s += `<line x1="${x(idx)}" x2="${x(idx)}" y1="${M.t}" y2="${H - M.b}" stroke="${css("--text-muted")}" stroke-dasharray="3 3"/>`;
+  s += `<path d="${path(series.media_modelos)}" fill="none" stroke="${css("--series-2")}" stroke-width="2"/>`;
+  s += `<path d="${path(series.corregido)}" fill="none" stroke="${css("--series-1")}" stroke-width="2"/>`;
+  s += `<line class="cross" y1="${M.t}" y2="${H - M.b}" stroke="${css("--text-muted")}" visibility="hidden"/>`;
   svg.innerHTML = s;
-  const cur = series.corregido[idx];
-  $("detail-meta").textContent = cur === null ? "" : `${fmtTime.format(new Date(series.times[idx]))}: ${cur.toFixed(1)} °C previstos`;
-  svg.onmousemove = (ev) => {
-    const rect = svg.getBoundingClientRect(), i = Math.round((ev.clientX - rect.left - m.l) / (W - m.l - m.r) * (n - 1));
-    if (i < 0 || i >= n) return;
-    const cross = svg.querySelector("#cross");
-    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
-    const f = (v) => v === null ? "–" : `${v.toFixed(1)} °C`;
-    $("tip").innerHTML = `<b>${fmtTime.format(new Date(series.times[i]))}</b><br>Corregida: ${f(series.corregido[i])}<br>Media modelos: ${f(series.media_modelos[i])}`;
-    $("tip").style.display = "block";
-    $("tip").style.left = `${Math.min(x(i) + 12, W - 170)}px`;
-    $("tip").style.top = "8px";
-  };
-  svg.onmouseleave = () => { $("tip").style.display = "none"; svg.querySelector("#cross").setAttribute("visibility", "hidden"); };
+  attachHover(svg, $("tip"), W, n, x);
 }
-addEventListener("resize", () => series && drawChart());
+
+function drawRain() {
+  const svg = $("rain-chart"), W = svg.clientWidth, H = 110;
+  const n = series.times.length, x = xScale(W, n);
+  const y = (v) => M.t + (H - M.t - M.b) * (100 - v) / 100;
+  const bw = Math.max(1, (W - M.l - M.r) / n - 1);
+  let s = "";
+  for (const v of [0, 50, 100])
+    s += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css("--grid")}"/><text x="${M.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css("--text-muted")}">${v}%</text>`;
+  s += dayTicks(x, H, W);
+  series.lluvia.forEach((v, i) => {
+    if (v === null || v < 1) return;
+    const top = y(v), h = y(0) - top;
+    s += `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(2, bw / 2)}" fill="${css("--rain")}"/>`;
+  });
+  s += `<line x1="${x(idx)}" x2="${x(idx)}" y1="${M.t}" y2="${H - M.b}" stroke="${css("--text-muted")}" stroke-dasharray="3 3"/>`;
+  s += `<line class="cross" y1="${M.t}" y2="${H - M.b}" stroke="${css("--text-muted")}" visibility="hidden"/>`;
+  svg.innerHTML = s;
+  attachHover(svg, $("rain-tip"), W, n, x);
+}
+addEventListener("resize", () => series && drawCharts());
 init();
 </script>
 </body>

@@ -81,7 +81,9 @@ class FakeNWP:
         t2m = np.stack([model_value(model, lat2d, lon2d, pd.Timestamp(run) + timedelta(hours=int(s)), s, self.rng)
                         for s in steps]).astype("float32")
         shape = t2m.shape
+        rate = np.where(lat2d > 42.0, 0.5, 0.0) * (self.rng.uniform(0, 1, shape) > 0.5)  # mm/3 h
         data = {"t2m": t2m, "d2m": t2m - 5, "tcc": self.rng.uniform(0, 100, shape).astype("float32"),
                 "u10": self.rng.normal(0, 3, shape).astype("float32"),
-                "v10": self.rng.normal(0, 3, shape).astype("float32")}
+                "v10": self.rng.normal(0, 3, shape).astype("float32"),
+                "tp": np.cumsum(rate, axis=0).astype("float32")}
         return RunFields(model, run, steps, self.lats, self.lons, data)

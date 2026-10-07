@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 from meteo_cat.grid import Grid, catalunya_mask
 from meteo_cat.interp import LinearInterpolator, idw_residuals
@@ -81,7 +82,7 @@ def test_decode_crop_from_grib():
     blob = eccodes.codes_get_message(h)
     eccodes.codes_release(h)
 
-    lats, lons, crop = decode_crop(blob)
+    lats, lons, crop, _ = decode_crop(blob)
     assert lats[0] > lats[-1] and np.all(np.diff(lons) > 0)
     assert lats.min() >= 39.75 and lats.max() <= 43.75 and lons.min() >= -0.75 and lons.max() <= 4.25
     i, j = list(lats).index(41.0), list(lons).index(2.0)
@@ -89,6 +90,8 @@ def test_decode_crop_from_grib():
     assert abs(convert_units("t2m", crop, "gfs")[i, j] - 4.12) < 1e-3
     assert convert_units("tcc", np.array([0.5]), "ecmwf")[0] == 50.0
     assert convert_units("tcc", np.array([0.5]), "gfs")[0] == 0.5
+    assert convert_units("tp", np.array([0.002]), "ecmwf", "m")[0] == 2.0
+    assert convert_units("tp", np.array([2.0]), "ecmwf", "kg m**-2")[0] == 2.0
 
 
 def test_gfs_index_selects_instantaneous_fields():
@@ -101,6 +104,9 @@ def test_gfs_index_selects_instantaneous_fields():
         "636:446191656:d=2026090100:TCDC:entire atmosphere:18-24 hour ave fcst:",
         "637:447021373:d=2026090100:TCDC:entire atmosphere:24 hour fcst:",
         "638:447900000:d=2026090100:PRES:surface:24 hour fcst:",
+        "639:448000000:d=2026090100:APCP:surface:18-24 hour acc fcst:",
+        "640:448100000:d=2026090100:APCP:surface:0-1 day acc fcst:",
+        "641:448200000:d=2026090100:CPOFP:surface:24 hour fcst:",
     ]).encode()
 
     class Client(NWPClient):
@@ -108,10 +114,11 @@ def test_gfs_index_selects_instantaneous_fields():
             return idx
 
     from datetime import datetime, timezone
-    url, ranges = Client()._gfs_ranges(datetime(2026, 9, 1, tzinfo=timezone.utc), 24, ("t2m", "d2m", "tcc"))
+    url, ranges = Client()._gfs_ranges(datetime(2026, 9, 1, tzinfo=timezone.utc), 24, ("t2m", "d2m", "tcc", "tp"))
     assert url.endswith("gfs.20260901/00/atmos/gfs.t00z.pgrb2.0p25.f024")
     assert ranges["t2m"] == (417829203, 419563245)
     assert ranges["tcc"] == (447021373, 447899999)  # la instantánea, no la media 18-24 h
+    assert ranges["tp"] == (448100000, 448199999)   # el acumulado desde el inicio
 
 
 def test_interp_steps_linear_in_time():
@@ -124,3 +131,19 @@ def test_interp_steps_linear_in_time():
                     np.array([42.0, 41.75]), np.array([1.0, 1.25]), {"t2m": arr})
     out = interp_steps(run, [0, 3, 6, 9, 12, 15])["t2m"][:, 0, 0]
     assert np.allclose(out[:5], [0, 3, 6, 9, 12]) and np.isnan(out[5])
+
+
+def test_xema_precipitation_3h_windows():
+    from datetime import date
+    from meteo_cat.sources.xema import sum_3h
+
+    times = pd.date_range("2026-09-20T00:00", "2026-09-20T05:30", freq="30min")
+    df = pd.DataFrame({"codi_estacio": "A", "data_lectura": times.strftime("%Y-%m-%dT%H:%M:%S.000"),
+                       "valor_lectura": ["0.1"] * 6 + ["1.0"] * 6})
+    df = pd.concat([df, pd.DataFrame({"codi_estacio": ["B"] * 3, "valor_lectura": ["5"] * 3,
+                                      "data_lectura": times[:3].strftime("%Y-%m-%dT%H:%M:%S.000")})])
+    out = sum_3h(df, date(2026, 9, 20), date(2026, 9, 20)).set_index(["station", "time"])["ppt3"]
+    # Ventana (00:00, 03:00]: lecturas de 00:00 a 02:30; (03:00, 06:00]: de 03:00 a 05:30.
+    assert abs(out[("A", pd.Timestamp("2026-09-20T03:00Z"))] - 0.6) < 1e-9
+    assert abs(out[("A", pd.Timestamp("2026-09-20T06:00Z"))] - 6.0) < 1e-9
+    assert ("B", pd.Timestamp("2026-09-20T03:00Z")) not in out.index  # ventana incompleta

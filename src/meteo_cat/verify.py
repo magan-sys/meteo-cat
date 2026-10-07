@@ -41,7 +41,37 @@ def time_alignment(df: pd.DataFrame, obs_col: str, pred_col: str, max_shift_h: i
     return out
 
 
-def persistence_tau(df: pd.DataFrame, resid_col: str, max_lag_h: int = 12) -> float:
+def prob_scores(obs: np.ndarray, prob: np.ndarray) -> dict[str, float]:
+    """Brier, Brier de la climatología, habilidad (BSS) y AUC de una probabilidad frente a 0/1."""
+    ok = np.isfinite(obs) & np.isfinite(prob)
+    o, p = obs[ok].astype(float), np.clip(prob[ok], 0, 1)
+    if len(o) == 0 or o.min() == o.max():
+        return {"n": int(len(o)), "brier": float("nan"), "bss": float("nan"), "auc": float("nan"),
+                "frecuencia": float(o.mean()) if len(o) else float("nan")}
+    brier = float(np.mean((p - o) ** 2))
+    clim = float(np.mean((o.mean() - o) ** 2))
+    # AUC con la fórmula de Mann-Whitney (rangos medios para empates).
+    ranks = pd.Series(p).rank().to_numpy()
+    n1 = o.sum()
+    auc = float((ranks[o == 1].sum() - n1 * (n1 + 1) / 2) / (n1 * (len(o) - n1)))
+    return {"n": int(len(o)), "brier": brier, "bss": 1 - brier / clim, "auc": auc, "frecuencia": float(o.mean())}
+
+
+def reliability(obs: np.ndarray, prob: np.ndarray, bins: int = 10) -> list[dict]:
+    """Frecuencia observada por tramos de probabilidad prevista (bien calibrado: diagonal)."""
+    ok = np.isfinite(obs) & np.isfinite(prob)
+    o, p = obs[ok], np.clip(prob[ok], 0, 1)
+    idx = np.minimum((p * bins).astype(int), bins - 1)
+    out = []
+    for b in range(bins):
+        m = idx == b
+        if m.any():
+            out.append({"tramo": f"{b * 100 // bins}-{(b + 1) * 100 // bins}%", "n": int(m.sum()),
+                        "prevista": float(p[m].mean()), "observada": float(o[m].mean())})
+    return out
+
+
+def persistence_tau(df: pd.DataFrame, resid_col: str, max_lag_h: int = 12, lag_step_h: int = 1) -> float:
     """Escala temporal (h) con que se pierde la memoria del error en estaciones.
 
     Ajusta corr(lag) ≈ exp(-lag/tau). Se usa en el nowcasting para decidir cuánto
@@ -50,7 +80,7 @@ def persistence_tau(df: pd.DataFrame, resid_col: str, max_lag_h: int = 12) -> fl
     s = df[["station", "time", resid_col]].dropna().drop_duplicates(["station", "time"])
     s = s.set_index(["station", "time"])[resid_col]
     lags, corrs = [], []
-    for lag in range(1, max_lag_h + 1):
+    for lag in range(lag_step_h, max_lag_h + 1, lag_step_h):
         a = s.reset_index()
         b = a.assign(time=a["time"] + pd.Timedelta(hours=lag))
         m = a.merge(b, on=["station", "time"], suffixes=("", "_lag"))

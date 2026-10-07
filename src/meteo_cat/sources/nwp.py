@@ -29,17 +29,21 @@ CROP_LON = (-0.75, 4.25)
 
 # Variables comunes a todos los modelos, en unidades de salida.
 VARIABLES = ("t2m", "d2m", "tcc", "u10", "v10")  # °C, °C, %, m/s, m/s
+# Precipitación acumulada desde el inicio de la pasada (mm). Se descarga aparte porque su
+# histórico se monta por separado.
+PRECIP = "tp"
 
 ECMWF_BASE = "https://storage.googleapis.com/ecmwf-open-data"
 GFS_BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 
-ECMWF_PARAMS = {"t2m": "2t", "d2m": "2d", "tcc": "tcc", "u10": "10u", "v10": "10v"}
+ECMWF_PARAMS = {"t2m": "2t", "d2m": "2d", "tcc": "tcc", "u10": "10u", "v10": "10v", "tp": "tp"}
 GFS_PARAMS = {
     "t2m": ":TMP:2 m above ground:",
     "d2m": ":DPT:2 m above ground:",
     "tcc": ":TCDC:entire atmosphere:",
     "u10": ":UGRD:10 m above ground:",
     "v10": ":VGRD:10 m above ground:",
+    "tp": ":APCP:surface:0-",  # acumulado desde el inicio ("0-N hour acc fcst")
 }
 
 
@@ -122,9 +126,14 @@ class NWPClient:
         ranges = {}
         for k, line in enumerate(lines):
             for v in variables:
-                # Solo el valor instantáneo ("N hour fcst" o "anl"), no medias acumuladas.
-                if v not in ranges and GFS_PARAMS[v] in line and (" hour fcst:" in line or ":anl:" in line) \
-                        and "-" not in line.split(":")[5]:
+                if v in ranges or GFS_PARAMS[v] not in line:
+                    continue
+                if v == "tp":
+                    ok = " acc fcst:" in line  # "0-N hour acc fcst" o "0-1 day acc fcst"
+                else:
+                    # Solo el valor instantáneo ("N hour fcst" o "anl"), no medias ni acumulados.
+                    ok = (" hour fcst:" in line or ":anl:" in line) and "-" not in line.split(":")[5]
+                if ok:
                     end = offsets[k + 1] - 1 if k + 1 < len(offsets) else ""
                     ranges[v] = (offsets[k], end)
         return url, ranges
@@ -159,13 +168,15 @@ class NWPClient:
         for step, v, blob in blobs:
             if blob is None:
                 continue
-            la, lo, field = decode_crop(blob)
+            la, lo, field, units = decode_crop(blob)
             if lats is None:
                 lats, lons = la, lo
                 data = {var: np.full((len(got_steps),) + field.shape, np.nan, dtype="float32") for var in variables}
-            data[v][got_steps.index(step)] = convert_units(v, field, spec.source)
+            data[v][got_steps.index(step)] = convert_units(v, field, spec.source, units)
         if lats is None:
             return None
+        if PRECIP in data and got_steps[0] == 0:
+            data[PRECIP][0] = 0.0  # al inicio de la pasada no hay acumulado (y a veces no hay campo)
         return RunFields(model, run, np.array(got_steps), lats, lons, data)
 
     def latest_run(self, model: str, now: datetime | None = None, horizon_h: int = 0,
@@ -192,8 +203,9 @@ class NWPClient:
                  else self._gfs_ranges(run, step, ("t2m",)))
         return bool(found and found[1])
 
-def decode_crop(blob: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Decodifica un mensaje GRIB2 en rejilla regular lat/lon y lo recorta a CROP_LAT/CROP_LON."""
+def decode_crop(blob: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+    """Decodifica un mensaje GRIB2 en rejilla regular lat/lon, lo recorta a CROP_LAT/CROP_LON
+    y devuelve también sus unidades."""
     import eccodes
 
     h = eccodes.codes_new_from_message(blob)
@@ -205,6 +217,7 @@ def decode_crop(blob: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         dlon = eccodes.codes_get(h, "iDirectionIncrementInDegrees")
         scans_neg = eccodes.codes_get(h, "jScansPositively") == 0
         vals = eccodes.codes_get_values(h).reshape(nj, ni)
+        units = eccodes.codes_get(h, "units")
     finally:
         eccodes.codes_release(h)
     lats = lat1 - dlat * np.arange(nj) if scans_neg else lat1 + dlat * np.arange(nj)
@@ -215,12 +228,15 @@ def decode_crop(blob: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         lats, vals = lats[::-1], vals[::-1]
     i = (lats >= CROP_LAT[0] - 1e-6) & (lats <= CROP_LAT[1] + 1e-6)
     j = (lons >= CROP_LON[0] - 1e-6) & (lons <= CROP_LON[1] + 1e-6)
-    return np.round(lats[i], 4), np.round(lons[j], 4), vals[np.ix_(i, j)].astype("float32")
+    return np.round(lats[i], 4), np.round(lons[j], 4), vals[np.ix_(i, j)].astype("float32"), units
 
 
-def convert_units(var: str, field: np.ndarray, source: str) -> np.ndarray:
+def convert_units(var: str, field: np.ndarray, source: str, units: str = "") -> np.ndarray:
     if var in ("t2m", "d2m"):
         return field - 273.15
     if var == "tcc" and source == "ecmwf":  # ECMWF en fracción (0-1), GFS ya en %
         return field * 100.0
+    if var == "tp":
+        # IFS da metros; AIFS y GFS, kg/m² (= mm).
+        return np.clip(field * 1000.0 if units.strip() == "m" else field, 0, None)
     return field

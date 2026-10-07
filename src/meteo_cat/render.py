@@ -102,11 +102,39 @@ def to_mercator_rows(field: np.ndarray, lats: np.ndarray) -> np.ndarray:
     return field[idx]
 
 
-def render_all(fields: np.ndarray, times, grid, out_dir: Path) -> None:
+# Probabilidad de lluvia: escala secuencial de un solo tono (azul), de claro a oscuro.
+# Por debajo de RAIN_MIN_PROB la celda es transparente para que se vea el mapa base.
+RAIN_STOPS = [(0.10, "#cde2fb"), (0.30, "#86b6ef"), (0.50, "#3987e5"), (0.70, "#256abf"),
+              (0.85, "#184f95"), (1.00, "#0d366b")]
+RAIN_MIN_PROB = 0.10
+
+
+def rain_palette_stops() -> list[tuple[float, str]]:
+    """(probabilidad en %, color)."""
+    return [(round(p * 100), c) for p, c in RAIN_STOPS]
+
+
+def colorize_rain(prob: np.ndarray) -> np.ndarray:
+    t = np.array([s[0] for s in RAIN_STOPS])
+    labs = np.array([to_oklab(_hex_to_rgb(c)) for _, c in RAIN_STOPS])
+    v = np.clip(np.nan_to_num(prob, nan=0.0), t[0], t[-1])
+    lab = np.stack([np.interp(v, t, labs[:, k]) for k in range(3)], axis=-1)
+    rgb = _delin(np.linalg.solve(_M1, np.linalg.solve(_M2, lab.reshape(-1, 3).T) ** 3)).T.reshape(prob.shape + (3,))
+    rgba = np.zeros(prob.shape + (4,), dtype=np.uint8)
+    rgba[..., :3] = np.round(np.clip(np.nan_to_num(rgb), 0, 1) * 255)
+    rgba[..., 3] = np.where(np.isfinite(prob) & (prob >= RAIN_MIN_PROB), 235, 0)
+    return rgba
+
+
+def render_all(fields: np.ndarray, times, grid, out_dir: Path, name: str = "t2m", colorizer=colorize) -> list[str]:
+    """Una imagen PNG por hora. Devuelve las rutas relativas a `out_dir`."""
     import matplotlib.image as mpimg
 
     img_dir = out_dir / "png"
     img_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
     for k, t in enumerate(times):
-        rgba = colorize(to_mercator_rows(fields[k], grid.lats))
-        mpimg.imsave(img_dir / f"t2m_{t.strftime('%Y%m%dT%H')}.png", rgba)
+        rel = f"png/{name}_{t.strftime('%Y%m%dT%H')}.png"
+        mpimg.imsave(out_dir / rel, colorizer(to_mercator_rows(fields[k], grid.lats)))
+        paths.append(rel)
+    return paths

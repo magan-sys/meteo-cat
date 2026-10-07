@@ -16,7 +16,7 @@ import pandas as pd
 
 from .config import Settings
 from .grid import catalunya_geometry
-from .sources.nwp import VARIABLES, NWPClient, RunFields
+from .sources.nwp import PRECIP, VARIABLES, NWPClient, RunFields
 from .sources.xema import XemaOpenData
 
 log = logging.getLogger(__name__)
@@ -95,46 +95,71 @@ def run_at_points(run: RunFields, plat, plon, steps=LEAD_STEPS_H) -> pd.DataFram
     return df
 
 
-def download(settings: Settings, start: date, end: date) -> None:
+def run_tp3_at_points(run: RunFields, plat, plon, steps=LEAD_STEPS_H) -> pd.DataFrame:
+    """Lluvia de las 3 h previas a cada paso (mm), en puntos: filas (punto, paso) con columna tp3."""
+    w = bilinear_weights(run.lats, run.lons, np.asarray(plat), np.asarray(plon))
+    steps = [s for s in steps if s >= 3]
+    acc = sample_points(interp_steps(run, steps)[PRECIP], w)
+    acc_prev = sample_points(interp_steps(run, [s - 3 for s in steps])[PRECIP], w)
+    n = len(plat)
+    df = pd.DataFrame({"point": np.tile(np.arange(n), len(steps)), "lead_h": np.repeat(np.asarray(steps), n)})
+    df["time"] = pd.Timestamp(run.run) + pd.to_timedelta(df["lead_h"], unit="h")
+    df["tp3"] = np.clip(acc - acc_prev, 0, None).reshape(-1).astype("float32")
+    return df
+
+
+def download(settings: Settings, start: date, end: date, what=("temp", "precip")) -> None:
     stations = load_stations(settings)
     log.info("%d estaciones", len(stations))
-    obs_dir = settings.history_dir / "obs"
-    obs_dir.mkdir(parents=True, exist_ok=True)
     xema = XemaOpenData()
     client = NWPClient()
+    jobs = []
+    if "temp" in what:
+        jobs.append(("obs", "nwp", xema.hourly_observations, VARIABLES, run_at_points))
+    if "precip" in what:
+        jobs.append(("obs_ppt", "nwp_tp", xema.precipitation_3h, (PRECIP,), run_tp3_at_points))
     for a, b in _months(start, end):
         # Un mes incompleto se guarda como ".partial" y se vuelve a descargar la próxima vez.
         complete = a.day == 1 and (b + timedelta(days=1)).day == 1
         tag = a.strftime("%Y-%m") + ("" if complete else ".partial")
-        obs_path = obs_dir / f"{tag}.parquet"
-        if not obs_path.exists() or not complete:
-            xema.hourly_observations(a, b).to_parquet(obs_path)
+        for obs_name, nwp_name, get_obs, variables, at_points in jobs:
+            _download_month(settings, client, stations, a, b, tag, complete,
+                            settings.history_dir / obs_name, settings.history_dir / nwp_name,
+                            get_obs, variables, at_points)
+
+
+def _download_month(settings, client, stations, a, b, tag, complete, obs_dir, nwp_dir,
+                    get_obs, variables, at_points) -> None:
+    obs_dir.mkdir(parents=True, exist_ok=True)
+    obs_path = obs_dir / f"{tag}.parquet"
+    if not obs_path.exists() or not complete:
+        get_obs(a, b).to_parquet(obs_path)
+        if complete:
+            (obs_dir / f"{tag}.partial.parquet").unlink(missing_ok=True)
+    for model in settings.models:
+        path = nwp_dir / model / f"{tag}.parquet"
+        if path.exists() and complete:
+            continue
+        frames = []
+        day = a
+        while day <= b:
+            run = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+            try:
+                fields = client.fetch_run(model, run, max(LEAD_STEPS_H), variables)
+            except Exception as e:  # una pasada que falla no detiene el histórico
+                log.warning("%s %s: %s", model, run, e)
+                fields = None
+            if fields is not None:
+                df = at_points(fields, stations["lat"].to_numpy(), stations["lon"].to_numpy())
+                df["station"] = stations["station"].to_numpy()[df.pop("point").to_numpy()]
+                frames.append(df)
+            day += timedelta(days=1)
+        if frames:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pd.concat(frames, ignore_index=True).to_parquet(path)
             if complete:
-                (obs_dir / f"{tag}.partial.parquet").unlink(missing_ok=True)
-        for model in settings.models:
-            path = settings.history_dir / "nwp" / model / f"{tag}.parquet"
-            if path.exists() and complete:
-                continue
-            frames = []
-            day = a
-            while day <= b:
-                run = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
-                try:
-                    fields = client.fetch_run(model, run, max(LEAD_STEPS_H))
-                except Exception as e:  # una pasada que falla no detiene el histórico
-                    log.warning("%s %s: %s", model, run, e)
-                    fields = None
-                if fields is not None:
-                    df = run_at_points(fields, stations["lat"].to_numpy(), stations["lon"].to_numpy())
-                    df["station"] = stations["station"].to_numpy()[df.pop("point").to_numpy()]
-                    frames.append(df)
-                day += timedelta(days=1)
-            if frames:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                pd.concat(frames, ignore_index=True).to_parquet(path)
-                if complete:
-                    (path.parent / f"{tag}.partial.parquet").unlink(missing_ok=True)
-            log.info("%s %s: %d pasadas", model, tag, len(frames))
+                (path.parent / f"{tag}.partial.parquet").unlink(missing_ok=True)
+        log.info("%s %s %s: %d pasadas", nwp_dir.name, model, tag, len(frames))
 
 
 def assemble(settings: Settings) -> pd.DataFrame:
@@ -154,6 +179,29 @@ def assemble(settings: Settings) -> pd.DataFrame:
     if wide is None:
         raise RuntimeError("No hay histórico de modelos descargado.")
     df = wide.merge(obs.rename(columns={"value": "obs"}), on=["station", "time"], how="inner")
+    stations = load_stations(settings)
+    return df.merge(stations[["station", "lat", "lon", "altitude"]], on="station", how="left")
+
+
+def assemble_precip(settings: Settings) -> pd.DataFrame:
+    """Como `assemble`, pero con la lluvia observada en 3 h (`obs`) y la de cada modelo (`tp3__<modelo>`)."""
+    obs = _read_all(settings.history_dir / "obs_ppt")
+    if obs.empty:
+        raise RuntimeError("No hay histórico de lluvia. Ejecuta antes `meteo-cat history`.")
+    keys = ["station", "time", "lead_h"]
+    wide = None
+    for model in settings.models:
+        temp = _read_all(settings.history_dir / "nwp" / model)
+        rain = _read_all(settings.history_dir / "nwp_tp" / model)
+        if temp.empty or rain.empty:
+            log.warning("Sin histórico de lluvia para %s", model)
+            continue
+        df = temp.merge(rain, on=keys, how="inner")
+        df = df.rename(columns={v: f"{v}__{model}" for v in VARIABLES + ("tp3",)})
+        wide = df if wide is None else wide.merge(df, on=keys, how="outer")
+    if wide is None:
+        raise RuntimeError("No hay histórico de lluvia de los modelos.")
+    df = wide.merge(obs.rename(columns={"ppt3": "obs"}), on=["station", "time"], how="inner")
     stations = load_stations(settings)
     return df.merge(stations[["station", "lat", "lon", "altitude"]], on="station", how="left")
 

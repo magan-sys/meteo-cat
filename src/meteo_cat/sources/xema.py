@@ -28,8 +28,9 @@ BASE = "https://analisi.transparenciacatalunya.cat/resource"
 STATIONS_DATASET = "yqwd-vj5e"
 READINGS_DATASET = "nzvn-apee"
 
-# Códigos de variable XEMA.
-VAR_TEMPERATURE = "32"
+# Códigos de variable XEMA (conjunto de metadatos de variables 4fb2-n3yi).
+VAR_TEMPERATURE = "32"    # Temperatura, °C
+VAR_PRECIPITATION = "35"  # Precipitació, mm por periodo semihorario
 
 PAGE = 50_000
 
@@ -90,6 +91,44 @@ class XemaOpenData:
         if not frames:
             return pd.DataFrame(columns=["station", "time", "value"])
         return pd.concat(frames, ignore_index=True)
+
+    def precipitation_3h(self, start: date, end: date) -> pd.DataFrame:
+        """Lluvia acumulada en las 3 h que terminan en cada hora múltiplo de 3 UTC: station, time, ppt3.
+
+        Se asume que cada lectura semihoraria cubre los 30 minutos que empiezan en `data_lectura`;
+        la ventana (t-3h, t] suma las lecturas de t-3h a t-30min. Solo se dan ventanas completas
+        (las 6 lecturas presentes).
+        """
+        frames = []
+        day = start - timedelta(days=1)  # para completar la primera ventana del día
+        while day <= end:
+            nxt = day + timedelta(days=1)
+            where = (f"codi_variable='{VAR_PRECIPITATION}' AND data_lectura >= '{day.isoformat()}T00:00:00' "
+                     f"AND data_lectura < '{nxt.isoformat()}T00:00:00'")
+            rows = self._query(READINGS_DATASET, {"$select": "codi_estacio,data_lectura,valor_lectura",
+                                                  "$where": where})
+            if rows:
+                frames.append(pd.DataFrame(rows))
+            day = nxt
+        if not frames:
+            return pd.DataFrame(columns=["station", "time", "ppt3"])
+        return sum_3h(pd.concat(frames, ignore_index=True), start, end)
+
+
+def sum_3h(df: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
+    t = pd.to_datetime(df["data_lectura"]).dt.tz_localize("UTC")
+    v = pd.to_numeric(df["valor_lectura"], errors="coerce")
+    d = pd.DataFrame({"station": df["codi_estacio"], "t": t, "v": v})
+    d = d[d["v"].between(0, 200)].drop_duplicates(["station", "t"])
+    # Ventana que termina en el siguiente múltiplo de 3 h tras el final de la lectura.
+    end_t = (d["t"] + pd.Timedelta(minutes=30)).dt.ceil("3h")
+    g = d.assign(time=end_t).groupby(["station", "time"])["v"].agg(["sum", "count"]).reset_index()
+    g = g[g["count"] == 6]
+    lo = pd.Timestamp(start, tz="UTC")
+    hi = pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)
+    g = g[(g["time"] > lo) & (g["time"] <= hi)]
+    return g.rename(columns={"sum": "ppt3"})[["station", "time", "ppt3"]].reset_index(drop=True)
+
 
 def _to_hourly(df: pd.DataFrame) -> pd.DataFrame:
     t = pd.to_datetime(df["data_lectura"]).dt.tz_localize("UTC")
