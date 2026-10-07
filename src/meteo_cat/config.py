@@ -8,12 +8,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Modelos numéricos consultados en Open-Meteo. Cada uno cubre un horizonte distinto;
+# Modelos numéricos consultados en Open-Meteo. Cada uno cubre un horizonte distinto
+# (ICON-D2 no se incluye: su dominio no llega a Catalunya);
 # los valores ausentes (p. ej. AROME más allá de ~42 h) llegan como NaN y LightGBM los admite.
 DEFAULT_MODELS = (
     "meteofrance_arome_france_hd",  # ~1,5 km, hasta ~42 h
     "meteofrance_arpege_europe",    # ~11 km, hasta ~4 días
-    "icon_d2",                      # ~2 km, hasta 48 h
     "icon_eu",                      # ~7 km, hasta 5 días
     "ecmwf_ifs025",                 # ~25 km, hasta 15 días
 )

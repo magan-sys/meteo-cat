@@ -6,7 +6,7 @@ Predicción meteorológica para Catalunya a ~1 km. Combina varios modelos numér
 
 ## Cómo funciona
 
-1. **Modelos numéricos** (Open-Meteo): AROME HD, ARPEGE, ICON-D2, ICON-EU y ECMWF IFS. Se piden sin la corrección de altitud de Open-Meteo, porque el ajuste por orografía lo hace este modelo.
+1. **Modelos numéricos** (Open-Meteo): AROME HD, ARPEGE, ICON-EU y ECMWF IFS (ICON-D2 no cubre Catalunya). Se piden sin la corrección de altitud de Open-Meteo, porque el ajuste por orografía lo hace este modelo.
 2. **Terreno** (DEM Copernicus GLO-90): altitud, rugosidad, pendiente, orientación, posición en valle o cresta (TPI), altitud a la escala de los modelos y distancia al mar.
 3. **Base física**: media de los modelos más la corrección por altitud con el gradiente térmico estándar (-6,5 °C/km).
 4. **Corrector ML** (LightGBM): aprende el error de esa base a partir del histórico de previsiones pasadas (Open-Meteo Previous Runs) y las observaciones de la XEMA. Tiene en cuenta la hora, la época del año, el horizonte, la dispersión entre modelos, la nubosidad, el viento y el terreno.
@@ -67,10 +67,10 @@ Ejemplo de programación con cron (cada 3 horas):
 
 Este código se desarrolló sin acceso de red a Open-Meteo ni al portal de datos abiertos de la Generalitat. Está probado con datos sintéticos (`pytest`), y el terreno con el DEM real. En la primera ejecución real hay que confirmar:
 
-- Nombres de campos de los conjuntos XEMA (`yqwd-vj5e`, `nzvn-apee`) y el código de variable de temperatura (`32`).
-- Zona horaria de `data_lectura` (se asume UTC). `train` avisa si detecta un desfase.
-- Formato de las claves `<variable>_previous_dayN_<modelo>` de la API Previous Runs y la cobertura histórica de cada modelo.
-- Retraso de publicación de los datos abiertos XEMA. Si es de horas, el nowcasting necesitará la API XEMA con clave.
+- Zona horaria de `data_lectura` (se asume UTC; la última lectura publicada va menos de 1 h por detrás de la hora UTC, lo que apunta a UTC). `train` avisa si detecta un desfase.
+- Fecha desde la que la API Previous Runs tiene datos `previous_dayN` de cada modelo (en enero de 2024 todavía no; en septiembre de 2026 sí).
+
+Confirmado con datos reales: campos de los conjuntos XEMA, código de temperatura `32`, publicación casi en tiempo real y formato de las claves `<variable>_previous_dayN_<modelo>`.
 
 ## Próximas fases
 
