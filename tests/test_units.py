@@ -3,7 +3,6 @@ import numpy as np
 from meteo_cat.grid import Grid, catalunya_mask
 from meteo_cat.interp import LinearInterpolator, idw_residuals
 from meteo_cat.render import colorize, palette_stops
-from meteo_cat.sources.openmeteo import OpenMeteoClient, parse_hourly, parse_previous_runs
 from meteo_cat.terrain import derive_features
 
 
@@ -17,54 +16,6 @@ def test_grid_and_mask():
         return m[np.argmin(abs(g.lats - lat)), np.argmin(abs(g.lons - lon))]
     assert at(41.40, 2.15) and at(41.62, 0.62)
     assert not at(41.0, 3.2)
-
-
-def test_parse_hourly_multi_model():
-    hourly = {"time": ["2026-10-07T00:00", "2026-10-07T01:00"],
-              "temperature_2m_icon_eu": [10.0, 11.0], "temperature_2m_icon_d2": [9.0, None]}
-    df = parse_hourly(hourly, ("temperature_2m",), ("icon_eu", "icon_d2"), point=3)
-    assert set(df["model"]) == {"icon_eu", "icon_d2"}
-    d2 = df[df["model"] == "icon_d2"]
-    assert d2["temperature_2m"].iloc[0] == 9.0 and np.isnan(d2["temperature_2m"].iloc[1])
-    assert (df["point"] == 3).all()
-    assert str(df["time"].dt.tz) == "UTC"
-
-
-def test_parse_previous_runs():
-    hourly = {"time": ["2026-10-07T00:00"],
-              "temperature_2m_icon_eu": [10.0],
-              "temperature_2m_previous_day1_icon_eu": [11.0],
-              "temperature_2m_previous_day2_icon_eu": [12.0],
-              "cloud_cover_previous_day1_icon_eu": [50.0]}
-    df = parse_previous_runs(hourly, ("temperature_2m", "cloud_cover"), ("icon_eu",), (0, 1, 2), point=0)
-    got = df.set_index("lead_day")["temperature_2m"].to_dict()
-    assert got == {0: 10.0, 1: 11.0, 2: 12.0}
-    assert df.set_index("lead_day").loc[1, "cloud_cover"] == 50.0
-
-
-def test_client_chunks_points_and_sends_elevation_nan():
-    calls = []
-
-    class Resp:
-        status_code = 200
-
-        def __init__(self, n):
-            self.n = n
-
-        def json(self):
-            return [{"hourly": {"time": ["2026-10-07T00:00"], "temperature_2m_a": [1.0],
-                                "temperature_2m_b": [2.0]}} for _ in range(self.n)]
-
-    class Session:
-        def get(self, url, params, timeout):
-            calls.append(params)
-            return Resp(len(params["latitude"].split(",")))
-
-    pts = np.column_stack([np.linspace(41, 42, 250), np.linspace(1, 2, 250)])
-    df = OpenMeteoClient(session=Session(), pause_s=0).forecast(pts, ("a", "b"), 24, ("temperature_2m",))
-    assert len(calls) == 3
-    assert all(set(c["elevation"].split(",")) == {"nan"} for c in calls)
-    assert df["point"].nunique() == 250 and len(df) == 500
 
 
 def test_terrain_slope_and_aspect():
@@ -110,3 +61,66 @@ def test_palette_and_colorize():
     img = colorize(np.array([[np.nan, -10.0, 15.0, 40.0]]))
     assert img.shape == (1, 4, 4) and img[0, 0, 3] == 0 and (img[0, 1:, 3] == 255).all()
     assert tuple(img[0, 2, :3]) == (0xF0, 0xEF, 0xEC)
+
+
+def test_decode_crop_from_grib():
+    import eccodes
+    from meteo_cat.sources.nwp import convert_units, decode_crop
+
+    h = eccodes.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+    # Rejilla global 1° que empieza en lon 180 (como ECMWF Open Data) y escanea de norte a sur.
+    for k, v in {"Ni": 360, "Nj": 181, "latitudeOfFirstGridPointInDegrees": 90.0,
+                 "longitudeOfFirstGridPointInDegrees": 180.0, "latitudeOfLastGridPointInDegrees": -90.0,
+                 "longitudeOfLastGridPointInDegrees": 179.0, "iDirectionIncrementInDegrees": 1.0,
+                 "jDirectionIncrementInDegrees": 1.0, "jScansPositively": 0}.items():
+        eccodes.codes_set(h, k, v)
+    lat = 90.0 - np.arange(181)
+    lon = (180.0 + np.arange(360) + 180.0) % 360.0 - 180.0
+    field = 273.15 + lat[:, None] * 0.1 + lon[None, :] * 0.01
+    eccodes.codes_set_values(h, field.ravel())
+    blob = eccodes.codes_get_message(h)
+    eccodes.codes_release(h)
+
+    lats, lons, crop = decode_crop(blob)
+    assert lats[0] > lats[-1] and np.all(np.diff(lons) > 0)
+    assert lats.min() >= 39.75 and lats.max() <= 43.75 and lons.min() >= -0.75 and lons.max() <= 4.25
+    i, j = list(lats).index(41.0), list(lons).index(2.0)
+    assert abs(crop[i, j] - (273.15 + 4.1 + 0.02)) < 1e-3
+    assert abs(convert_units("t2m", crop, "gfs")[i, j] - 4.12) < 1e-3
+    assert convert_units("tcc", np.array([0.5]), "ecmwf")[0] == 50.0
+    assert convert_units("tcc", np.array([0.5]), "gfs")[0] == 0.5
+
+
+def test_gfs_index_selects_instantaneous_fields():
+    from meteo_cat.sources.nwp import NWPClient
+
+    idx = "\n".join([
+        "580:417000000:d=2026090100:HGT:surface:24 hour fcst:",
+        "581:417829203:d=2026090100:TMP:2 m above ground:24 hour fcst:",
+        "583:419563246:d=2026090100:DPT:2 m above ground:24 hour fcst:",
+        "636:446191656:d=2026090100:TCDC:entire atmosphere:18-24 hour ave fcst:",
+        "637:447021373:d=2026090100:TCDC:entire atmosphere:24 hour fcst:",
+        "638:447900000:d=2026090100:PRES:surface:24 hour fcst:",
+    ]).encode()
+
+    class Client(NWPClient):
+        def _get(self, url, rng=None):
+            return idx
+
+    from datetime import datetime, timezone
+    url, ranges = Client()._gfs_ranges(datetime(2026, 9, 1, tzinfo=timezone.utc), 24, ("t2m", "d2m", "tcc"))
+    assert url.endswith("gfs.20260901/00/atmos/gfs.t00z.pgrb2.0p25.f024")
+    assert ranges["t2m"] == (417829203, 419563245)
+    assert ranges["tcc"] == (447021373, 447899999)  # la instantánea, no la media 18-24 h
+
+
+def test_interp_steps_linear_in_time():
+    from datetime import datetime, timezone
+    from meteo_cat.history import interp_steps
+    from meteo_cat.sources.nwp import RunFields
+
+    arr = np.stack([np.full((2, 2), v, "float32") for v in (0.0, 6.0, 12.0)])
+    run = RunFields("m", datetime(2026, 1, 1, tzinfo=timezone.utc), np.array([0, 6, 12]),
+                    np.array([42.0, 41.75]), np.array([1.0, 1.25]), {"t2m": arr})
+    out = interp_steps(run, [0, 3, 6, 9, 12, 15])["t2m"][:, 0, 0]
+    assert np.allclose(out[:5], [0, 3, 6, 9, 12]) and np.isnan(out[5])

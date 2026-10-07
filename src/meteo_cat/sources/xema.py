@@ -69,26 +69,27 @@ class XemaOpenData:
         return out
 
     def hourly_observations(self, start: date, end: date, variable: str = VAR_TEMPERATURE) -> pd.DataFrame:
-        """Lecturas en hora en punto: station, time (UTC), value. Descarga mes a mes."""
+        """Lecturas en hora en punto: station, time (UTC), value.
+
+        Se consulta día a día: las consultas de un mes entero con paginación son muy lentas en el portal.
+        """
         frames = []
-        cur = start
-        while cur <= end:
-            nxt = min((cur.replace(day=1) + timedelta(days=32)).replace(day=1), end + timedelta(days=1))
-            where = (f"codi_variable='{variable}' AND data_lectura >= '{cur.isoformat()}T00:00:00' "
+        day = start
+        while day <= end:
+            nxt = day + timedelta(days=1)
+            where = (f"codi_variable='{variable}' AND data_lectura >= '{day.isoformat()}T00:00:00' "
                      f"AND data_lectura < '{nxt.isoformat()}T00:00:00'")
             rows = self._query(READINGS_DATASET, {
                 "$select": "codi_estacio,data_lectura,valor_lectura",
                 "$where": where,
-                "$order": "data_lectura",
             })
-            log.info("XEMA %s: %d lecturas", cur.strftime("%Y-%m"), len(rows))
             if rows:
                 frames.append(_to_hourly(pd.DataFrame(rows)))
-            cur = nxt
+            day = nxt
+        log.info("XEMA %s a %s: %d lecturas horarias", start, end, sum(len(f) for f in frames))
         if not frames:
             return pd.DataFrame(columns=["station", "time", "value"])
         return pd.concat(frames, ignore_index=True)
-
 
 def _to_hourly(df: pd.DataFrame) -> pd.DataFrame:
     t = pd.to_datetime(df["data_lectura"]).dt.tz_localize("UTC")

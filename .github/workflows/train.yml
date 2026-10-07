@@ -1,0 +1,53 @@
+name: reentrenamiento
+
+# El día 2 de cada mes (o a mano): actualiza el histórico del último año, reentrena el
+# corrector y guarda el modelo en el repositorio. El histórico se conserva en la caché de
+# Actions para que cada mes solo se descargue lo nuevo.
+on:
+  schedule:
+    - cron: "40 3 2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+
+      - name: Caché del histórico
+        uses: actions/cache@v4
+        with:
+          path: var/history
+          key: history-${{ github.run_id }}
+          restore-keys: history-
+
+      - name: Caché de terreno
+        uses: actions/cache@v4
+        with:
+          path: var/terrain
+          key: terrain-${{ hashFiles('src/meteo_cat/terrain.py', 'src/meteo_cat/grid.py') }}
+
+      - run: test -f var/terrain/terrain_0.01.npz || meteo-cat terrain
+      - name: Histórico (último año)
+        run: |
+          rm -f var/history/stations.parquet
+          meteo-cat history --start "$(date -u -d '365 days ago' +%F)" --end "$(date -u -d '4 days ago' +%F)"
+      - name: Entrenamiento
+        run: mkdir -p models && meteo-cat train | tee models/report.txt
+
+      - name: Guardar el modelo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models
+          git commit -m "Reentrenamiento mensual del corrector" || echo "Sin cambios"
+          git push

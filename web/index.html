@@ -136,10 +136,13 @@ function legend(stops) {
 }
 
 async function init() {
-  const r = await fetch("/api/meta");
+  const r = await fetch("data/meta.json", { cache: "no-cache" });
   if (!r.ok) { $("issued").textContent = "Todavía no hay previsión disponible."; return; }
   meta = await r.json();
-  const parts = [`Emitida ${fmtTime.format(new Date(meta.issued))}`, meta.ml_correction ? "corrección ML activa" : "sin modelo ML (solo media + altitud)"];
+  const names = { ecmwf_ifs: "ECMWF IFS", ecmwf_aifs: "ECMWF AIFS", gfs: "GFS" };
+  const parts = [`Emitida ${fmtTime.format(new Date(meta.issued))}`,
+    `modelos: ${Object.keys(meta.runs).map((m) => names[m] || m).join(", ")}`,
+    meta.ml_correction ? "corrección ML activa" : "sin modelo ML (solo media + altitud)"];
   if (meta.nowcast) parts.push(`nowcasting con ${meta.nowcast.stations} estaciones`);
   $("issued").textContent = parts.join(" · ");
   $("slider").max = meta.times.length - 1;
@@ -155,10 +158,31 @@ $("play").addEventListener("click", () => {
 });
 $("close").addEventListener("click", () => { $("detail").classList.remove("open"); series = null; if (marker) map.removeLayer(marker); });
 
+const tileCache = new Map();
+async function pointSeries(lat, lon) {
+  const g = meta.grid, T = meta.times.length;
+  const i = Math.round((g.lat0 - lat) / g.step), j = Math.round((lon - g.lon0) / g.step);
+  if (i < 0 || i >= g.ny || j < 0 || j >= g.nx) return null;
+  const key = `${Math.floor(i / g.tile)}_${Math.floor(j / g.tile)}`;
+  if (!tileCache.has(key)) {
+    const r = await fetch(`data/series/${key}.bin`);
+    tileCache.set(key, r.ok ? new Int16Array(await r.arrayBuffer()) : null);
+  }
+  const a = tileCache.get(key);
+  if (!a) return null;
+  const ii = i % g.tile, jj = j % g.tile, at = (k, t) => a[((k * T + t) * g.tile + ii) * g.tile + jj];
+  const val = (v) => (v === g.missing ? null : v / 10);
+  const corr = [], raw = [];
+  for (let t = 0; t < T; t++) { corr.push(val(at(0, t))); raw.push(val(at(1, t))); }
+  if (corr.every((v) => v === null)) return null;
+  return { lat: g.lat0 - i * g.step, lon: g.lon0 + j * g.step, times: meta.times, corregido: corr, media_modelos: raw };
+}
+
 map.on("click", async (e) => {
-  const r = await fetch(`/api/point?lat=${e.latlng.lat.toFixed(4)}&lon=${e.latlng.lng.toFixed(4)}`);
-  if (!r.ok) return;
-  series = await r.json();
+  if (!meta) return;
+  const s = await pointSeries(e.latlng.lat, e.latlng.lng);
+  if (!s) return;
+  series = s;
   if (marker) map.removeLayer(marker);
   marker = L.circleMarker([series.lat, series.lon], { radius: 6, weight: 2, color: "#fff", fillColor: "#0b0b0b", fillOpacity: 1 }).addTo(map);
   $("detail-title").textContent = `${series.lat.toFixed(2)}° N, ${series.lon.toFixed(2)}° E`;

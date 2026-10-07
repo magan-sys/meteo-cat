@@ -107,8 +107,6 @@ def render_all(fields: np.ndarray, times, grid, out_dir: Path) -> None:
 
     img_dir = out_dir / "png"
     img_dir.mkdir(parents=True, exist_ok=True)
-    for old in img_dir.glob("*.png"):
-        old.unlink()
     for k, t in enumerate(times):
         rgba = colorize(to_mercator_rows(fields[k], grid.lats))
         mpimg.imsave(img_dir / f"t2m_{t.strftime('%Y%m%dT%H')}.png", rgba)

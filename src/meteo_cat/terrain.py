@@ -6,7 +6,8 @@ Genera, sobre la rejilla fina (~1 km):
   slope           pendiente (grados)
   aspect_sin/cos  orientación de la ladera
   tpi_5km         posición topográfica: altitud menos la media a ~5 km (valles < 0, crestas > 0)
-  elev_smooth_10km altitud suavizada a la escala de los modelos globales
+  elev_smooth_10km altitud suavizada a ~10 km
+  elev_smooth_25km altitud suavizada a la escala de los modelos globales (0,25°)
   land_frac       fracción de tierra
   dist_sea_km     distancia al mar (km)
 """
@@ -38,6 +39,7 @@ TERRAIN_FEATURES = (
     "aspect_cos",
     "tpi_5km",
     "elev_smooth_10km",
+    "elev_smooth_25km",
     "land_frac",
     "dist_sea_km",
 )
@@ -124,6 +126,8 @@ def derive_features(elev: np.ndarray, elev_sq: np.ndarray, land_frac: np.ndarray
     cell_km = grid.step * KM_PER_DEG_LAT
     smooth5 = ndimage.gaussian_filter(elev, sigma=5.0 / cell_km, mode="nearest")
     smooth10 = ndimage.gaussian_filter(elev, sigma=10.0 / cell_km, mode="nearest")
+    # Una celda de 0,25° (~25 km) equivale aproximadamente a un filtro gaussiano de sigma ~12 km.
+    smooth25 = ndimage.gaussian_filter(elev, sigma=12.0 / cell_km, mode="nearest")
 
     sea = land_frac < 0.5
     if sea.any():
@@ -139,6 +143,7 @@ def derive_features(elev: np.ndarray, elev_sq: np.ndarray, land_frac: np.ndarray
         "aspect_cos": aspect_cos,
         "tpi_5km": elev - smooth5,
         "elev_smooth_10km": smooth10,
+        "elev_smooth_25km": smooth25,
         "land_frac": land_frac,
         "dist_sea_km": dist,
     }

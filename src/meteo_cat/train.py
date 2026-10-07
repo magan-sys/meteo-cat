@@ -48,9 +48,8 @@ def split(df: pd.DataFrame, holdout_frac: float = 0.2, time_frac: float = 0.8, s
     return (~late & ~is_held), (late & ~is_held), (late & is_held)
 
 
-def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...], variables,
-        out_dir: Path) -> dict:
-    X, base = build_features(df, terrain, models, variables)
+def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...], out_dir: Path) -> dict:
+    X, base = build_features(df, terrain, models)
     y = df["obs"].to_numpy(dtype="float64") - base
     ok = np.isfinite(y)
     df, X, base, y = df[ok].reset_index(drop=True), X[ok].reset_index(drop=True), base[ok], y[ok]
@@ -64,7 +63,8 @@ def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...
                         callbacks=[lgb.early_stopping(100, verbose=False), lgb.log_evaluation(200)])
     best = booster.best_iteration or MAX_ROUNDS
 
-    eval_df = df[["station", "time", "lead_day", "obs"]].copy()
+    eval_df = df[["station", "time", "lead_h", "obs"]].copy()
+    eval_df["lead_day"] = (eval_df["lead_h"] // 24).clip(upper=2).astype(int)
     eval_df["raw_ens_mean"] = X["ens_mean"].to_numpy()
     eval_df["base"] = base
     eval_df["corrected"] = base + booster.predict(X, num_iteration=best)
@@ -86,6 +86,7 @@ def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...
         "desfase_horario_mae": time_alignment(eval_df[eval_df["lead_day"] == 0], "obs", "raw_ens_mean"),
     }
     eval_df["resid"] = eval_df["obs"] - eval_df["corrected"]
+    # Para la persistencia del error se usa la pasada más reciente posible (primeras 24 h).
     tau = persistence_tau(eval_df[va & (eval_df["lead_day"] == 0).to_numpy()], "resid")
     report["nowcast_tau_h"] = tau
 
@@ -93,8 +94,8 @@ def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...
     final = lgb.train(PARAMS, lgb.Dataset(X, y), int(best * 1.1))
     out_dir.mkdir(parents=True, exist_ok=True)
     final.save_model(str(out_dir / "t2m.txt"))
-    meta = {"target": TARGET_VAR, "models": list(models), "variables": list(variables),
-            "features": list(X.columns), "nowcast_tau_h": tau, "trained_at": report["trained_at"]}
+    meta = {"target": TARGET_VAR, "models": list(models), "features": list(X.columns),
+            "nowcast_tau_h": tau, "trained_at": report["trained_at"], "period": report["period"]}
     (out_dir / "t2m_meta.json").write_text(json.dumps(meta, indent=2))
     (out_dir / "t2m_report.json").write_text(json.dumps(report, indent=2, default=str))
     return report
@@ -130,7 +131,7 @@ def format_report(report: dict) -> str:
             lines.append(f"{r['prediction']:<32}{r['mae']:7.2f}{r['rmse']:7.2f}{r['bias']:7.2f}")
         lines.append("")
     shift = report["desfase_horario_mae"]
-    best = min(shift, key=lambda k: shift[k])
+    best = int(min(shift, key=lambda k: shift[k]))
     if best != 0:
         lines.append(f"AVISO: las observaciones encajan mejor con un desfase de {best} h. Revisar zona horaria.")
     lines.append(f"Persistencia del error para nowcasting: tau = {report['nowcast_tau_h']:.1f} h")
