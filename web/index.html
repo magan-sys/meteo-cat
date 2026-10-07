@@ -129,6 +129,10 @@ const tiles = (dark) => L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 
 let base = tiles(isDark()).addTo(map);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { map.removeLayer(base); base = tiles(isDark()).addTo(map); });
 
+fetch("data/catalunya.geojson").then((r) => r.ok ? r.json() : null).then((g) => {
+  if (g) L.geoJSON(g, { interactive: false, style: { color: css("--text-secondary"), weight: 1, fill: false } }).addTo(map);
+});
+
 let meta = null, overlay = null, idx = 0, timer = null, marker = null, series = null, layer = "t2m";
 
 function images() { return layer === "rain" ? meta.rain_images : meta.images; }

@@ -46,6 +46,7 @@ def publish(settings: Settings, out_dir: Path) -> Path:
     data = out_dir / "data"
     (data / "series").mkdir(parents=True)
     shutil.copy(REPO_ROOT / "web" / "index.html", out_dir / "index.html")
+    shutil.copy(REPO_ROOT / "data" / "catalunya.geojson", data / "catalunya.geojson")
     (out_dir / ".nojekyll").write_text("")
 
     import pandas as pd
