@@ -55,6 +55,10 @@ header .sub { color: var(--text-secondary); font-size: 13px; }
 .legend { padding: 8px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--text-secondary); font-size: 12px; }
 .legend .bar { height: 10px; flex: 1; max-width: 360px; border-radius: 2px; }
 .ticks { display: flex; justify-content: space-between; max-width: 360px; flex: 1; font-variant-numeric: tabular-nums; }
+@media (max-width: 719px) {
+  body { display: block; height: auto; }
+  #map { height: 62vh; }
+}
 .legend .hint { flex-basis: 100%; }
 @media (min-width: 720px) { .legend .hint { flex-basis: auto; } }
 #detail {
@@ -187,7 +191,9 @@ map.on("click", async (e) => {
   marker = L.circleMarker([series.lat, series.lon], { radius: 6, weight: 2, color: "#fff", fillColor: "#0b0b0b", fillOpacity: 1 }).addTo(map);
   $("detail-title").textContent = `${series.lat.toFixed(2)}° N, ${series.lon.toFixed(2)}° E`;
   $("detail").classList.add("open");
+  map.invalidateSize();
   drawChart();
+  if (innerWidth < 720) $("detail").scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
 function drawChart() {
