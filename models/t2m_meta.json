@@ -1,0 +1,53 @@
+{
+  "target": "t2m",
+  "models": [
+    "ecmwf_ifs",
+    "ecmwf_aifs",
+    "gfs"
+  ],
+  "features": [
+    "t2m__ecmwf_ifs",
+    "d2m__ecmwf_ifs",
+    "tcc__ecmwf_ifs",
+    "ws10__ecmwf_ifs",
+    "t2m__ecmwf_aifs",
+    "d2m__ecmwf_aifs",
+    "tcc__ecmwf_aifs",
+    "ws10__ecmwf_aifs",
+    "t2m__gfs",
+    "d2m__gfs",
+    "tcc__gfs",
+    "ws10__gfs",
+    "ens_std",
+    "ens_mean",
+    "n_models",
+    "d2m__mean",
+    "tcc__mean",
+    "spread_dew",
+    "u10__mean",
+    "v10__mean",
+    "ws10__mean",
+    "hour_sin",
+    "hour_cos",
+    "doy_sin",
+    "doy_cos",
+    "lead_h",
+    "elevation",
+    "elev_std",
+    "slope",
+    "aspect_sin",
+    "aspect_cos",
+    "tpi_5km",
+    "elev_smooth_10km",
+    "elev_smooth_25km",
+    "land_frac",
+    "dist_sea_km",
+    "elev_minus_smooth"
+  ],
+  "nowcast_tau_h": 5.507026609096569,
+  "trained_at": "2026-10-07T23:53:15+00:00",
+  "period": [
+    "2025-10-01 00:00:00+00:00",
+    "2026-10-06 21:00:00+00:00"
+  ]
+}

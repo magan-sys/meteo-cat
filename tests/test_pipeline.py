@@ -51,7 +51,7 @@ def test_train_forecast_and_publish(settings, tmp_path):
     assert scores["corregido_ML"] < 0.5 * scores["media_modelos"]
     shift = report["desfase_horario_mae"]
     assert min(shift, key=shift.get) == 0
-    assert (settings.models_dir / "t2m.txt").exists()
+    assert (settings.models_dir / "t2m.txt.gz").exists()
     json.dumps(report, default=str)
 
     # Observaciones "ahora" con un error común de +2 °C: el nowcasting debe absorberlo al inicio.
@@ -128,4 +128,4 @@ def test_rain_classifier_learns_and_is_calibrated(settings):
     for r in rep["fiabilidad_corregido"]:
         if r["n"] > 300:
             assert abs(r["prevista"] - r["observada"]) < 0.15
-    assert (settings.models_dir / "rain.txt").exists()
+    assert (settings.models_dir / "rain.txt.gz").exists()

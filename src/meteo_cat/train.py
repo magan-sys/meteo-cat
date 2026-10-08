@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 from datetime import datetime, timezone
@@ -29,6 +30,18 @@ PARAMS = {
     "verbose": -1,
 }
 MAX_ROUNDS = 3000
+
+
+def save_booster(booster: lgb.Booster, path: Path) -> None:
+    """Guarda el modelo comprimido (el texto de LightGBM ocupa ~5 veces más)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", compresslevel=9) as f:
+        f.write(booster.model_to_string())
+
+
+def load_booster(path: Path) -> lgb.Booster:
+    with gzip.open(path, "rt") as f:
+        return lgb.Booster(model_str=f.read())
 
 
 def split(df: pd.DataFrame, holdout_frac: float = 0.2, seed: int = 0):
@@ -95,7 +108,7 @@ def fit(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str, ...
     # Modelo final con todos los datos y el número de iteraciones hallado.
     final = lgb.train(PARAMS, lgb.Dataset(X, y), int(best * 1.1))
     out_dir.mkdir(parents=True, exist_ok=True)
-    final.save_model(str(out_dir / "t2m.txt"))
+    save_booster(final, out_dir / "t2m.txt.gz")
     meta = {"target": TARGET_VAR, "models": list(models), "features": list(X.columns),
             "nowcast_tau_h": tau, "trained_at": report["trained_at"], "period": report["period"]}
     (out_dir / "t2m_meta.json").write_text(json.dumps(meta, indent=2))
@@ -112,7 +125,7 @@ class Corrector:
         self.meta = None
         if meta_path.exists():
             self.meta = json.loads(meta_path.read_text())
-            self.booster = lgb.Booster(model_file=str(models_dir / "t2m.txt"))
+            self.booster = load_booster(models_dir / "t2m.txt.gz")
 
     @property
     def tau_h(self) -> float:
@@ -190,7 +203,7 @@ def fit_rain(df: pd.DataFrame, terrain: dict[str, np.ndarray], models: tuple[str
 
     final = lgb.train(RAIN_PARAMS, lgb.Dataset(X, y), int(best * 1.1))
     out_dir.mkdir(parents=True, exist_ok=True)
-    final.save_model(str(out_dir / "rain.txt"))
+    save_booster(final, out_dir / "rain.txt.gz")
     meta = {"target": f"lluvia >= {RAIN_THRESHOLD_MM} mm en 3 h", "models": list(models),
             "features": list(X.columns), "nowcast_tau_h": report["nowcast_tau_h"],
             "trained_at": report["trained_at"], "period": report["period"]}
@@ -208,7 +221,7 @@ class RainCorrector:
         self.meta = None
         if meta_path.exists():
             self.meta = json.loads(meta_path.read_text())
-            self.booster = lgb.Booster(model_file=str(models_dir / "rain.txt"))
+            self.booster = load_booster(models_dir / "rain.txt.gz")
 
     @property
     def tau_h(self) -> float:

@@ -1,0 +1,42 @@
+Periodo: 2025-10-01 00:00:00+00:00 a 2026-10-06 21:00:00+00:00
+
+Validación (semanas reservadas, estaciones de entrenamiento)
+predicción                          MAE   RMSE  sesgo
+corregido_ML                       1.01   1.36  -0.02
+media+altitud                      1.72   2.32   0.24
+ecmwf_ifs                          1.93   2.59   0.07
+media_modelos                      1.94   2.58   0.32
+gfs                                2.12   2.80   0.41
+ecmwf_aifs                         2.17   2.84   0.47
+
+Estaciones no vistas en el entrenamiento
+predicción                          MAE   RMSE  sesgo
+corregido_ML                       1.24   1.64  -0.10
+media+altitud                      1.67   2.24   0.58
+media_modelos                      1.81   2.42   0.03
+ecmwf_ifs                          1.81   2.41  -0.13
+gfs                                2.03   2.69   0.03
+ecmwf_aifs                         2.04   2.67   0.19
+
+Persistencia del error para nowcasting: tau = 5.5 h
+
+Lluvia >= 0.2 mm en 3 h. Periodo: 2025-10-01 03:00:00+00:00 a 2026-10-07 00:00:00+00:00
+
+conjunto                      predicción            Brier    BSS    AUC  frec.
+semanas reservadas            fraccion_modelos      0.066  -0.16   0.93   0.06
+semanas reservadas            corregido_ML          0.030   0.48   0.96   0.06
+estaciones no vistas          fraccion_modelos      0.064  -0.23   0.93   0.05
+estaciones no vistas          corregido_ML          0.027   0.48   0.96   0.05
+
+Fiabilidad en estaciones no vistas (prevista -> observada):
+     0-10%  0.01 -> 0.01  (n=58363)
+    10-20%  0.14 -> 0.17  (n=2090)
+    20-30%  0.25 -> 0.27  (n=1084)
+    30-40%  0.35 -> 0.35  (n=893)
+    40-50%  0.45 -> 0.45  (n=625)
+    50-60%  0.55 -> 0.53  (n=556)
+    60-70%  0.65 -> 0.61  (n=457)
+    70-80%  0.75 -> 0.73  (n=518)
+    80-90%  0.85 -> 0.85  (n=524)
+   90-100%  0.94 -> 0.95  (n=491)
+Persistencia del error para nowcasting: tau = 3.0 h
