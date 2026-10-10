@@ -55,6 +55,10 @@ def publish(settings: Settings, out_dir: Path) -> Path:
     meta["palette"] = palette_stops()
     meta["rain_images"] = ["data/" + p for p in render_all(d["rain_prob"], ts, grid, data, "rain", colorize_rain)]
     meta["rain_palette"] = rain_palette_stops()
+    # Probabilidad máxima de lluvia en Catalunya en cada hora (%), para avisar de horas secas.
+    with np.errstate(all="ignore"):
+        rmax = np.nanmax(d["rain_prob"].reshape(len(ts), -1), axis=1)
+    meta["rain_max"] = [int(round(float(v) * 100)) if np.isfinite(v) else None for v in rmax]
 
     layers = [to_int16(d[key] * f) for _, key, f in SERIES]
     ny, nx = grid.shape

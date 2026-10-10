@@ -96,6 +96,7 @@ def test_train_forecast_and_publish(settings, tmp_path):
     assert len(m["images"]) == 24 and all((site / p).exists() for p in m["images"])
     assert len(m["rain_images"]) == 24 and all((site / p).exists() for p in m["rain_images"])
     assert m["grid"]["layers"] == ["t2m", "t2m_raw", "rain_prob", "rain_mm"]
+    assert len(m["rain_max"]) == 24 and m["rain_max"][6] == round(float(np.nanmax(d["rain_prob"][6])) * 100)
     assert (site / "index.html").exists() and "data/meta.json" in (site / "index.html").read_text()
     i, j = int(np.argwhere(inside)[0][0]), int(np.argwhere(inside)[0][1])
     tile = np.fromfile(site / "data" / "series" / f"{i // TILE}_{j // TILE}.bin", dtype="<i2")

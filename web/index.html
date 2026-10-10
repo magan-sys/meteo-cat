@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="ca">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -79,23 +79,27 @@ svg.chart { width: 100%; display: block; }
 .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: none; z-index: 2; }
 .chart-wrap { position: relative; }
+.note { margin: 0 16px 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text-secondary); font-size: 13px; }
+#rain-max { font-weight: 400; color: var(--text-muted); }
 .close { float: right; background: none; border: 0; color: var(--text-secondary); font-size: 18px; cursor: pointer; min-width: 44px; min-height: 36px; }
 </style>
 </head>
 <body>
 <header>
-  <h1 id="title">Temperatura prevista en Catalunya</h1>
-  <span class="sub" id="issued">Cargando…</span>
+  <h1 id="title">Temperatura prevista a Catalunya</h1>
+  <span class="sub" id="issued">Carregant…</span>
 </header>
 <div class="controls">
   <div class="seg" role="group" aria-label="Variable">
     <button id="btn-t2m" aria-pressed="true">Temperatura</button>
-    <button id="btn-rain" aria-pressed="false">Lluvia</button>
+    <button id="btn-rain" aria-pressed="false">Pluja</button>
   </div>
-  <button id="play" aria-label="Reproducir">▶</button>
-  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Hora de previsión">
+  <button id="play" aria-label="Reprodueix">▶</button>
+  <input type="range" id="slider" min="0" max="0" value="0" aria-label="Hora de previsió">
   <span class="time" id="time">–</span>
 </div>
+<div class="note" id="rain-note" hidden></div>
 <div id="map"></div>
 <div>
   <div class="legend">
@@ -104,26 +108,26 @@ svg.chart { width: 100%; display: block; }
       <div class="bar" id="legend-bar"></div>
       <div class="ticks" id="legend-ticks"></div>
     </div>
-    <span class="hint" id="legend-hint">Toca el mapa para ver la evolución en un punto</span>
+    <span class="hint" id="legend-hint">Toca el mapa per veure l'evolució en un punt</span>
   </div>
   <div id="detail">
-    <button class="close" id="close" aria-label="Cerrar">×</button>
-    <h2 id="detail-title">Punto</h2>
+    <button class="close" id="close" aria-label="Tanca">×</button>
+    <h2 id="detail-title">Punt</h2>
     <div class="meta" id="detail-meta"></div>
     <h3>Temperatura</h3>
     <div class="chart-legend">
-      <span style="--c: var(--series-1)">Previsión corregida</span>
-      <span style="--c: var(--series-2)">Media de modelos sin corregir</span>
+      <span style="--c: var(--series-1)">Previsió corregida</span>
+      <span style="--c: var(--series-2)">Mitjana dels models sense corregir</span>
     </div>
-    <div class="chart-wrap"><svg id="chart" class="chart" height="170" role="img" aria-label="Evolución de la temperatura"></svg><div class="tip" id="tip"></div></div>
-    <h3>Probabilidad de lluvia (≥ 0,2 mm en 3 h)</h3>
-    <div class="chart-wrap"><svg id="rain-chart" class="chart" height="110" role="img" aria-label="Probabilidad de lluvia por hora"></svg><div class="tip" id="rain-tip"></div></div>
+    <div class="chart-wrap"><svg id="chart" class="chart" height="170" role="img" aria-label="Evolució de la temperatura"></svg><div class="tip" id="tip"></div></div>
+    <h3>Probabilitat de pluja (≥ 0,2 mm en 3 h) <span id="rain-max"></span></h3>
+    <div class="chart-wrap"><svg id="rain-chart" class="chart" height="110" role="img" aria-label="Probabilitat de pluja per hora"></svg><div class="tip" id="rain-tip"></div></div>
   </div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
-const fmtTime = new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
-const fmtDay = new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", timeZone: "Europe/Madrid" });
+const fmtTime = new Intl.DateTimeFormat("ca-ES", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
+const fmtDay = new Intl.DateTimeFormat("ca-ES", { weekday: "short", day: "numeric", timeZone: "Europe/Madrid" });
 const isDark = () => getComputedStyle(document.documentElement).colorScheme === "dark";
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
@@ -150,7 +154,16 @@ function setHour(i) {
   const opacity = layer === "rain" ? 0.85 : 0.8;
   if (!overlay) overlay = L.imageOverlay(images()[i], bounds, { opacity }).addTo(map);
   else { overlay.setUrl(images()[i]); overlay.setOpacity(opacity); }
+  updateRainNote();
   if (series) drawCharts();
+}
+
+function updateRainNote() {
+  const note = $("rain-note"), mx = meta.rain_max ? meta.rain_max[idx] : null;
+  if (layer !== "rain" || mx === null || mx >= 10) { note.hidden = true; return; }
+  note.textContent = `Sense pluja apreciable prevista en aquesta hora: la probabilitat màxima a Catalunya és del ${mx} %. `
+    + "El mapa només acoloreix a partir del 10 %.";
+  note.hidden = false;
 }
 
 function legend() {
@@ -163,10 +176,10 @@ function legend() {
   $("legend-bar").style.outline = rain ? `1px solid ${css("--border")}` : "none";
   $("legend-ticks").innerHTML = (rain ? [0, 25, 50, 75, 100] : [min, 0, 15, 30, max]).map((t) => `<span>${t}</span>`).join("");
   $("legend-unit").textContent = rain ? "%" : "°C";
-  $("title").textContent = rain ? "Probabilidad de lluvia en Catalunya" : "Temperatura prevista en Catalunya";
+  $("title").textContent = rain ? "Probabilitat de pluja a Catalunya" : "Temperatura prevista a Catalunya";
   $("legend-hint").textContent = rain
-    ? "Probabilidad de ≥ 0,2 mm en las 3 h anteriores. Toca el mapa para ver un punto"
-    : "Toca el mapa para ver la evolución en un punto";
+    ? "Probabilitat de ≥ 0,2 mm en les 3 h anteriors. Toca el mapa per veure un punt"
+    : "Toca el mapa per veure l'evolució en un punt";
 }
 
 function setLayer(l) {
@@ -179,13 +192,13 @@ function setLayer(l) {
 
 async function init() {
   const r = await fetch("data/meta.json", { cache: "no-cache" });
-  if (!r.ok) { $("issued").textContent = "Todavía no hay previsión disponible."; return; }
+  if (!r.ok) { $("issued").textContent = "Encara no hi ha cap previsió disponible."; return; }
   meta = await r.json();
   const names = { ecmwf_ifs: "ECMWF IFS", ecmwf_aifs: "ECMWF AIFS", gfs: "GFS" };
-  const parts = [`Emitida ${fmtTime.format(new Date(meta.issued))}`,
-    `modelos: ${Object.keys(meta.runs).map((m) => names[m] || m).join(", ")}`,
-    meta.ml_correction ? "corrección ML activa" : "sin modelo ML (solo media + altitud)"];
-  if (meta.nowcast && meta.nowcast.stations) parts.push(`nowcasting con ${meta.nowcast.stations} estaciones`);
+  const parts = [`Emesa ${fmtTime.format(new Date(meta.issued))}`,
+    `models: ${Object.keys(meta.runs).map((m) => names[m] || m).join(", ")}`,
+    meta.ml_correction ? "correcció ML activa" : "sense model ML (només mitjana + altitud)"];
+  if (meta.nowcast && meta.nowcast.stations) parts.push(`ajust amb ${meta.nowcast.stations} estacions en temps real`);
   $("issued").textContent = parts.join(" · ");
   $("slider").max = meta.times.length - 1;
   legend();
@@ -248,7 +261,7 @@ function dayTicks(x, H, W) {
   let s = "";
   series.times.forEach((t, i) => {
     const d = new Date(t);
-    const hour = +new Intl.DateTimeFormat("es-ES", { hour: "numeric", hourCycle: "h23", timeZone: "Europe/Madrid" }).format(d);
+    const hour = +new Intl.DateTimeFormat("ca-ES", { hour: "numeric", hourCycle: "h23", timeZone: "Europe/Madrid" }).format(d);
     if (hour === 0 && x(i) + 44 < W) s += `<line x1="${x(i)}" x2="${x(i)}" y1="${M.t}" y2="${H - M.b}" stroke="${css("--grid")}"/>
       <text x="${x(i) + 4}" y="${H - 6}" font-size="11" fill="${css("--text-muted")}">${fmtDay.format(d)}</text>`;
   });
@@ -261,7 +274,7 @@ function hoverIndex(svg, ev, W, n) {
 function tipHtml(i) {
   const f = (v, u, d = 1) => v === null ? "–" : `${v.toFixed(d)} ${u}`;
   return `<b>${fmtTime.format(new Date(series.times[i]))}</b><br>Corregida: ${f(series.corregido[i], "°C")}`
-    + `<br>Media modelos: ${f(series.media_modelos[i], "°C")}<br>Lluvia: ${f(series.lluvia[i], "%", 0)}`
+    + `<br>Mitjana models: ${f(series.media_modelos[i], "°C")}<br>Pluja: ${f(series.lluvia[i], "%", 0)}`
     + ` · ${f(series.mm[i], "mm")}`;
 }
 function attachHover(svg, tip, W, n, x) {
@@ -284,7 +297,7 @@ function updateMeta() {
   const t = series.corregido[idx], p = series.lluvia[idx];
   const parts = [];
   if (t !== null) parts.push(`${t.toFixed(1)} °C`);
-  if (p !== null) parts.push(`${p.toFixed(0)} % de probabilidad de lluvia`);
+  if (p !== null) parts.push(`${p.toFixed(0)} % de probabilitat de pluja`);
   $("detail-meta").textContent = `${fmtTime.format(new Date(series.times[idx]))}: ${parts.join(" · ")}`;
 }
 
@@ -308,6 +321,8 @@ function drawTemp() {
 }
 
 function drawRain() {
+  const vals = series.lluvia.filter((v) => v !== null);
+  $("rain-max").textContent = vals.length ? `· màxim en 72 h: ${Math.round(Math.max(...vals))} %` : "";
   const svg = $("rain-chart"), W = svg.clientWidth, H = 110;
   const n = series.times.length, x = xScale(W, n);
   const y = (v) => M.t + (H - M.t - M.b) * (100 - v) / 100;
