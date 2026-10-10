@@ -31,7 +31,7 @@ AROME (Météo-France) e ICON-EU (DWD) también son abiertos, pero sin históric
 
 | Flujo | Cuándo | Qué hace |
 |---|---|---|
-| `previsión` | Cada hora (minuto 17) | Descarga las últimas pasadas completas y las observaciones, genera la previsión y publica el panel en GitHub Pages |
+| `previsión` | 7:00, 12:00, 17:00 y 21:00 (hora de Catalunya) | Descarga las últimas pasadas completas y las observaciones, genera la previsión y publica el panel en GitHub Pages |
 | `reentrenamiento` | Día 2 de cada mes | Actualiza el histórico del último año (en la caché de Actions), reentrena y guarda el modelo en `models/` |
 | `tests` | En cada cambio | Pruebas automáticas |
 

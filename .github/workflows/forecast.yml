@@ -1,10 +1,15 @@
 name: previsión
 
-# Cada hora: descarga las últimas pasadas de los modelos y las observaciones XEMA,
-# genera la previsión corregida y publica el panel en GitHub Pages.
+# A las 7:00, 12:00, 17:00 y 21:00 (hora de Catalunya): descarga las últimas pasadas de
+# los modelos y las observaciones XEMA, genera la previsión corregida y publica el panel.
+#
+# GitHub solo admite horarios en UTC. Se programan las dos horas UTC posibles de cada
+# franja (horario de verano, UTC+2, y de invierno, UTC+1) y el trabajo `horario` descarta
+# la que no corresponde a la hora local de ese día.
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "0 5,10,15,19 * * *"  # 7, 12, 17 y 21 h en horario de verano
+    - cron: "0 6,11,16,20 * * *"  # 7, 12, 17 y 21 h en horario de invierno
   workflow_dispatch:
 
 permissions:
@@ -17,7 +22,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  horario:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          run = True
+          if os.environ["EVENT"] == "schedule":
+              # Hora local de la ejecución programada (no de su inicio real, que puede retrasarse).
+              now = datetime.now(timezone.utc)
+              hours = [int(h) for h in os.environ["CRON"].split()[1].split(",")]
+              local = {now.replace(hour=h, minute=0).astimezone(ZoneInfo("Europe/Madrid")).hour for h in hours}
+              run = local <= {7, 12, 17, 21}
+          print(f"run={'true' if run else 'false'}")
+          PY
+
   forecast:
+    needs: horario
+    if: needs.horario.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
