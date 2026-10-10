@@ -55,7 +55,12 @@ header .sub { color: var(--text-secondary); font-size: 13px; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .controls input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
 .controls .time { font-variant-numeric: tabular-nums; min-width: 150px; font-weight: 600; }
-#map { height: min(68vh, 760px); min-height: 300px; }
+#map { height: min(68vh, 760px); min-height: 300px; background: var(--surface); }
+.leaflet-tile-pane { filter: grayscale(0.6) contrast(0.9); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .leaflet-tile-pane { filter: grayscale(0.7) invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
+}
+:root[data-theme="dark"] .leaflet-tile-pane { filter: grayscale(0.7) invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9); }
 .legend { padding: 8px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--text-secondary); font-size: 12px; }
 .legend .bar { height: 10px; flex: 1; max-width: 360px; border-radius: 2px; }
 .ticks { display: flex; justify-content: space-between; max-width: 360px; flex: 1; font-variant-numeric: tabular-nums; }
@@ -123,11 +128,10 @@ const isDark = () => getComputedStyle(document.documentElement).colorScheme === 
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 const map = L.map("map", { zoomControl: true }).fitBounds([[40.52, 0.16], [42.86, 3.33]]);
-const tiles = (dark) => L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-  attribution: "&copy; OpenStreetMap &copy; CARTO", subdomains: "abcd", maxZoom: 12,
-});
-let base = tiles(isDark()).addTo(map);
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { map.removeLayer(base); base = tiles(isDark()).addTo(map); });
+// Mapa base de OpenStreetMap (gratuito, sin clave). En modo oscuro se oscurece con un filtro CSS.
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 12,
+}).addTo(map);
 
 fetch("data/catalunya.geojson").then((r) => r.ok ? r.json() : null).then((g) => {
   if (g) L.geoJSON(g, { interactive: false, style: { color: css("--text-secondary"), weight: 1, fill: false } }).addTo(map);

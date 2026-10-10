@@ -77,4 +77,4 @@ Variables de entorno opcionales: `METEOCAT_DATA_DIR` (datos, por defecto `./var`
 - Observaciones XEMA: Servei Meteorològic de Catalunya, datos abiertos de la Generalitat.
 - DEM: Copernicus GLO-90, © DLR e.V. 2010-2014 y © Airbus Defence and Space GmbH 2014-2018, proporcionado bajo COPERNICUS por la Unión Europea y la ESA.
 - Contorno de Catalunya: Natural Earth (dominio público).
-- Mapa base: © OpenStreetMap, © CARTO.
+- Mapa base: © colaboradores de OpenStreetMap.
